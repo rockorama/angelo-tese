@@ -1,0 +1,31 @@
+---
+import { figure } from "../lib/content.js";
+const { block } = Astro.props;
+---
+
+{block.type === "p" && <p set:html={block.html ?? block.text} />}
+
+{
+  block.type === "caption" && (
+    <p class="standalone-caption">
+      <em>{block.text}</em>
+    </p>
+  )
+}
+
+{
+  block.type === "figure" && (
+    <figure class:list={[block.caption ? "figure" : "equation"]}>
+      <img
+        src={figure(block.src)}
+        width={block.w}
+        height={block.h}
+        loading="lazy"
+        decoding="async"
+        alt={block.caption ?? `Equation from page ${block.page + 1}`}
+        style={`max-width:min(100%, ${Math.round(block.w / 2)}px)`}
+      />
+      {block.caption && <figcaption>{block.caption}</figcaption>}
+    </figure>
+  )
+}

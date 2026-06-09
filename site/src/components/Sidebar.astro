@@ -1,0 +1,41 @@
+---
+import { getChapters, meta, url } from "../lib/content.js";
+const { active } = Astro.props;
+const chapters = getChapters();
+---
+
+<nav class="sidebar" aria-label="Thesis contents">
+  <a class="brand" href={url("")}>
+    <span class="title">{meta.title}</span>
+    <span class="sub">{meta.subtitle}</span>
+  </a>
+  <div class="nav-group">
+    {
+      chapters.map((c) => {
+        const subs = c.sections.filter((s) => s.level >= 2);
+        const isActive = c.slug === active;
+        return (
+          <div>
+            <a
+              class:list={["nav-chapter", { active: isActive }]}
+              href={url(c.slug)}
+              aria-current={isActive ? "page" : undefined}
+            >
+              {c.number && <span class="num">{c.number}</span>}
+              <span class="t">{c.title}</span>
+            </a>
+            {isActive && subs.length > 0 && (
+              <ul class="nav-subs">
+                {subs.map((s) => (
+                  <li>
+                    <a href={`${url(c.slug)}#${s.slug}`}>{s.title}</a>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        );
+      })
+    }
+  </div>
+</nav>

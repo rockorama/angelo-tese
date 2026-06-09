@@ -1,0 +1,18 @@
+{
+  "name": "angelo-thesis-site",
+  "type": "module",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "extract": "python3 ../pipeline/extract.py",
+    "dev": "astro dev",
+    "build": "astro build && pagefind --site dist",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^5.5.0"
+  },
+  "devDependencies": {
+    "pagefind": "^1.3.0"
+  }
+}

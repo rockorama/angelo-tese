@@ -1,0 +1,52 @@
+---
+import "../styles/global.css";
+import Sidebar from "../components/Sidebar.astro";
+import { meta, url } from "../lib/content.js";
+
+const { title, description, active } = Astro.props;
+const pageTitle = title ? `${title} · ${meta.title}` : meta.title;
+const desc = description ?? `${meta.title} — ${meta.subtitle}. By ${meta.author}.`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{pageTitle}</title>
+    <meta name="description" content={desc} />
+    <link rel="icon" href={url("favicon.svg")} />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={desc} />
+    <meta property="og:type" content="article" />
+  </head>
+  <body>
+    <div class="layout">
+      <Sidebar active={active} />
+      <div class="scrim" id="scrim"></div>
+      <div class="main">
+        <header class="topbar">
+          <button class="menu-btn" id="menuBtn" aria-label="Toggle contents" aria-expanded="false">☰</button>
+          <strong style="font-family:var(--sans);font-size:0.9rem;color:var(--grey-700)">
+            {title ?? meta.title}
+          </strong>
+          <span class="spacer"></span>
+          <a class="pdf-link" href={url(meta.pdf)} download>Download PDF</a>
+        </header>
+        <slot />
+      </div>
+    </div>
+    <script is:inline>
+      const btn = document.getElementById("menuBtn");
+      const scrim = document.getElementById("scrim");
+      const toggle = (open) => {
+        document.body.classList.toggle("nav-open", open);
+        btn?.setAttribute("aria-expanded", String(open));
+      };
+      btn?.addEventListener("click", () =>
+        toggle(!document.body.classList.contains("nav-open"))
+      );
+      scrim?.addEventListener("click", () => toggle(false));
+    </script>
+  </body>
+</html>

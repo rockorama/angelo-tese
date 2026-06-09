@@ -1,0 +1,67 @@
+---
+import Base from "../layouts/Base.astro";
+import Block from "../components/Block.astro";
+import { getChapterNav, url } from "../lib/content.js";
+
+export function getStaticPaths() {
+  const nav = getChapterNav();
+  return nav.map((c) => ({ params: { chapter: c.slug }, props: { c } }));
+}
+
+const { c } = Astro.props;
+const headingTag = (lvl) => (lvl >= 3 ? "h3" : "h2");
+---
+
+<Base title={c.title} active={c.slug}>
+  <article class="content" data-pagefind-body>
+    <h1>
+      {c.number && <span class="chnum">{c.number}.</span>}
+      {c.title}
+    </h1>
+
+    {c.head.blocks.map((b) => <Block block={b} />)}
+
+    {
+      c.sections
+        .filter((s) => s.level >= 2)
+        .map((s) => {
+          const Tag = headingTag(s.level);
+          return (
+            <section>
+              <Tag id={s.slug}>{s.title}</Tag>
+              {s.blocks.map((b) => (
+                <Block block={b} />
+              ))}
+            </section>
+          );
+        })
+    }
+
+    <nav class="chapter-nav" data-pagefind-ignore>
+      {
+        c.prev ? (
+          <a class="prev" href={url(c.prev.slug)}>
+            <span class="dir">← Previous</span>
+            <span class="lbl">
+              {c.prev.number ? `${c.prev.number}. ` : ""}
+              {c.prev.title}
+            </span>
+          </a>
+        ) : (
+          <span />
+        )
+      }
+      {
+        c.next && (
+          <a class="next" href={url(c.next.slug)}>
+            <span class="dir">Next →</span>
+            <span class="lbl">
+              {c.next.number ? `${c.next.number}. ` : ""}
+              {c.next.title}
+            </span>
+          </a>
+        )
+      }
+    </nav>
+  </article>
+</Base>

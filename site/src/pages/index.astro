@@ -1,0 +1,47 @@
+---
+import Base from "../layouts/Base.astro";
+import Search from "../components/Search.astro";
+import { getChapters, meta, figure, url } from "../lib/content.js";
+
+const chapters = getChapters();
+const numbered = chapters.filter((c) => c.number);
+const first = chapters[0];
+---
+
+<Base title={null} description={`${meta.title} — ${meta.subtitle}. An online edition of the thesis by ${meta.author}.`}>
+  <section class="hero">
+    {meta.cover && <img class="plane" src={figure(meta.cover)} alt="Lockheed Super Constellation airliner illustration" />}
+    <h1>{meta.title}</h1>
+    <p class="subtitle">{meta.subtitle}</p>
+    <div class="byline">{meta.author} &nbsp;·&nbsp; {meta.advisor} (Advisor)</div>
+  </section>
+
+  <div class="landing-body">
+    <div class="search-wrap">
+      <Search id="home-search" />
+    </div>
+
+    <div class="cta-row">
+      <a class="btn btn-primary" href={url(first.slug)}>Start reading →</a>
+      <a class="btn btn-ghost" href={url(meta.pdf)} download>Download original PDF</a>
+    </div>
+
+    <h2 style="font-family:var(--sans);font-size:1.3rem;color:var(--grey-700);margin-bottom:1rem">Contents</h2>
+    <div class="toc-grid">
+      {
+        numbered.map((c) => {
+          const subs = c.sections.filter((s) => s.level >= 2).length;
+          return (
+            <a class="toc-card" href={url(c.slug)}>
+              <span class="num">Chapter {c.number}</span>
+              <span class="t">{c.title}</span>
+              <span class="meta">
+                {subs > 0 ? `${subs} section${subs > 1 ? "s" : ""}` : "—"}
+              </span>
+            </a>
+          );
+        })
+      }
+    </div>
+  </div>
+</Base>
