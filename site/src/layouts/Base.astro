@@ -6,6 +6,7 @@ import { meta, url } from "../lib/content.js";
 const { title, description, active } = Astro.props;
 const pageTitle = title ? `${title} · ${meta.title}` : meta.title;
 const desc = description ?? `${meta.title} — ${meta.subtitle}. By ${meta.author}.`;
+const bundle = url("pagefind/");
 ---
 
 <!doctype html>
@@ -19,6 +20,26 @@ const desc = description ?? `${meta.title} — ${meta.subtitle}. By ${meta.autho
     <meta property="og:title" content={pageTitle} />
     <meta property="og:description" content={desc} />
     <meta property="og:type" content="article" />
+    <link href={url("pagefind/pagefind-ui.css")} rel="stylesheet" />
+    <script is:inline define:vars={{ bundle }}>
+      // Shared, idempotent loader so the landing inline search and the
+      // global header search modal never double-load Pagefind.
+      window.loadPagefind = function () {
+        if (!window.__pagefindPromise) {
+          window.__pagefindPromise = new Promise((resolve, reject) => {
+            const s = document.createElement("script");
+            s.src = bundle + "pagefind-ui.js";
+            s.onload = () =>
+              typeof PagefindUI !== "undefined"
+                ? resolve(PagefindUI)
+                : reject(new Error("PagefindUI missing"));
+            s.onerror = reject;
+            document.head.appendChild(s);
+          });
+        }
+        return window.__pagefindPromise;
+      };
+    </script>
   </head>
   <body>
     <div class="layout">
@@ -27,26 +48,147 @@ const desc = description ?? `${meta.title} — ${meta.subtitle}. By ${meta.autho
       <div class="main">
         <header class="topbar">
           <button class="menu-btn" id="menuBtn" aria-label="Toggle contents" aria-expanded="false">☰</button>
-          <strong style="font-family:var(--sans);font-size:0.9rem;color:var(--grey-700)">
+          <strong class="topbar-title">
             {title ?? meta.title}
           </strong>
           <span class="spacer"></span>
+          <button class="search-trigger" id="searchTrigger" aria-label="Search the thesis" aria-haspopup="dialog">
+            <span class="ico" aria-hidden="true">⌕</span>
+            <span class="lbl">Search</span>
+            <span class="kbd" aria-hidden="true">/</span>
+          </button>
           <a class="pdf-link" href={url(meta.pdf)} download>Download PDF</a>
         </header>
         <slot />
       </div>
     </div>
-    <script is:inline>
+
+    <!-- Global search modal (available on every page) -->
+    <div class="search-modal" id="searchModal" hidden data-pagefind-ignore>
+      <div class="search-modal__backdrop" data-search-close></div>
+      <div class="search-modal__panel" role="dialog" aria-modal="true" aria-label="Search the thesis">
+        <div class="search-modal__head">
+          <span class="search-modal__title">Search the thesis</span>
+          <button class="search-modal__close" data-search-close aria-label="Close search">✕</button>
+        </div>
+        <div id="global-search" class="pagefind-search"></div>
+      </div>
+    </div>
+
+    <!-- Image lightbox -->
+    <div class="lightbox" id="lightbox" hidden data-pagefind-ignore>
+      <button class="lightbox__close" aria-label="Close image">✕</button>
+      <figure class="lightbox__stage">
+        <img class="lightbox__img" alt="" />
+        <figcaption class="lightbox__cap"></figcaption>
+      </figure>
+    </div>
+
+    <script is:inline define:vars={{ bundle }}>
+      // ---- Mobile nav drawer ----
       const btn = document.getElementById("menuBtn");
       const scrim = document.getElementById("scrim");
-      const toggle = (open) => {
+      const toggleNav = (open) => {
         document.body.classList.toggle("nav-open", open);
         btn?.setAttribute("aria-expanded", String(open));
       };
       btn?.addEventListener("click", () =>
-        toggle(!document.body.classList.contains("nav-open"))
+        toggleNav(!document.body.classList.contains("nav-open"))
       );
-      scrim?.addEventListener("click", () => toggle(false));
+      scrim?.addEventListener("click", () => toggleNav(false));
+
+      // ---- Global search modal ----
+      const modal = document.getElementById("searchModal");
+      const trigger = document.getElementById("searchTrigger");
+      let searchReady = false;
+      const focusInput = () =>
+        modal?.querySelector("input")?.focus();
+
+      const openSearch = () => {
+        if (!modal) return;
+        modal.hidden = false;
+        document.body.classList.add("search-open");
+        if (!searchReady) {
+          searchReady = true;
+          window
+            .loadPagefind()
+            .then((PagefindUI) => {
+              new PagefindUI({
+                element: "#global-search",
+                bundlePath: bundle,
+                showSubResults: true,
+                showImages: false,
+                pageSize: 8,
+              });
+              setTimeout(focusInput, 50);
+            })
+            .catch(() => {
+              const el = document.getElementById("global-search");
+              if (el)
+                el.innerHTML =
+                  '<p class="search-fallback">Search index is generated at build time (run <code>npm run build</code>).</p>';
+            });
+        } else {
+          setTimeout(focusInput, 30);
+        }
+      };
+      const closeSearch = () => {
+        if (!modal) return;
+        modal.hidden = true;
+        document.body.classList.remove("search-open");
+      };
+
+      trigger?.addEventListener("click", openSearch);
+      modal
+        ?.querySelectorAll("[data-search-close]")
+        .forEach((el) => el.addEventListener("click", closeSearch));
+
+      // ---- Image lightbox ----
+      const lb = document.getElementById("lightbox");
+      const lbImg = lb?.querySelector(".lightbox__img");
+      const lbCap = lb?.querySelector(".lightbox__cap");
+      const openLightbox = (img) => {
+        if (!lb || !lbImg) return;
+        lbImg.src = img.currentSrc || img.src;
+        lbImg.alt = img.alt || "";
+        const cap = img
+          .closest("figure")
+          ?.querySelector("figcaption")?.textContent;
+        if (lbCap) {
+          lbCap.textContent = cap || "";
+          lbCap.style.display = cap ? "" : "none";
+        }
+        lb.hidden = false;
+        document.body.classList.add("lightbox-open");
+      };
+      const closeLightbox = () => {
+        if (!lb) return;
+        lb.hidden = true;
+        document.body.classList.remove("lightbox-open");
+      };
+      // Only real figures are zoomable (equations are excluded by class).
+      document.querySelectorAll("figure.figure img").forEach((img) => {
+        img.classList.add("zoomable");
+        img.addEventListener("click", () => openLightbox(img));
+      });
+      lb?.addEventListener("click", (e) => {
+        if (e.target === lb || e.target.classList.contains("lightbox__close"))
+          closeLightbox();
+      });
+
+      // ---- Keyboard shortcuts ----
+      document.addEventListener("keydown", (e) => {
+        const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(
+          document.activeElement?.tagName || ""
+        );
+        if (e.key === "Escape") {
+          if (lb && !lb.hidden) closeLightbox();
+          else if (modal && !modal.hidden) closeSearch();
+        } else if (!typing && (e.key === "/" || ((e.metaKey || e.ctrlKey) && e.key === "k"))) {
+          e.preventDefault();
+          openSearch();
+        }
+      });
     </script>
   </body>
 </html>

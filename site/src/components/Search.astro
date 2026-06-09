@@ -6,28 +6,24 @@ const bundle = url("pagefind/");
 
 <div id={id} class="pagefind-search"></div>
 
-<link href={url("pagefind/pagefind-ui.css")} rel="stylesheet" />
 <script is:inline define:vars={{ bundle, id }}>
-  function initPagefind() {
-    if (typeof PagefindUI === "undefined") return false;
-    new PagefindUI({
-      element: "#" + id,
-      bundlePath: bundle,
-      showSubResults: true,
-      showImages: false,
-      pageSize: 8,
+  // Uses the shared loader defined in Base.astro so the index script is
+  // fetched only once even when the global search modal is also present.
+  window
+    .loadPagefind()
+    .then((PagefindUI) => {
+      new PagefindUI({
+        element: "#" + id,
+        bundlePath: bundle,
+        showSubResults: true,
+        showImages: false,
+        pageSize: 8,
+      });
+    })
+    .catch(() => {
+      const el = document.getElementById(id);
+      if (el)
+        el.innerHTML =
+          '<p class="search-fallback">Search index loads after the site is built (run <code>npm run build</code>).</p>';
     });
-    return true;
-  }
-  // pagefind-ui.js is generated at build time; load it then init.
-  const s = document.createElement("script");
-  s.src = bundle + "pagefind-ui.js";
-  s.onload = initPagefind;
-  s.onerror = () => {
-    const el = document.getElementById(id);
-    if (el)
-      el.innerHTML =
-        '<p style="font-family:var(--sans);color:var(--grey-500)">Search index loads after the site is built (run <code>npm run build</code>).</p>';
-  };
-  document.head.appendChild(s);
 </script>
