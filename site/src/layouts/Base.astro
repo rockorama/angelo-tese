@@ -139,8 +139,12 @@ const bundle = url("pagefind/");
       const trigger = document.getElementById("searchTrigger");
       let searchReady = false;
       let releaseSearchTrap = null;
-      const focusInput = () =>
-        modal?.querySelector("input")?.focus();
+      // Bail if the modal was closed before this (deferred) call fires,
+      // so a late Pagefind init can't pull focus into a hidden input.
+      const focusInput = () => {
+        if (!modal || modal.hidden) return;
+        modal.querySelector("input")?.focus();
+      };
 
       const openSearch = () => {
         if (!modal) return;
