@@ -97,15 +97,54 @@ const bundle = url("pagefind/");
       );
       scrim?.addEventListener("click", () => toggleNav(false));
 
+      // ---- Shared modal focus management ----
+      const FOCUSABLE =
+        'a[href], button:not([disabled]), input, textarea, select, [tabindex]:not([tabindex="-1"])';
+      // Keeps Tab/Shift+Tab inside `container` and remembers the element to
+      // restore focus to when the overlay closes. Returns a teardown fn.
+      const trapFocus = (container) => {
+        const prevFocus = document.activeElement;
+        const onKeydown = (e) => {
+          if (e.key !== "Tab") return;
+          const items = [...container.querySelectorAll(FOCUSABLE)].filter(
+            (el) => el.offsetParent !== null || el === document.activeElement
+          );
+          if (!items.length) {
+            e.preventDefault();
+            return;
+          }
+          const first = items[0];
+          const last = items[items.length - 1];
+          if (e.shiftKey && document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          } else if (!e.shiftKey && document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          } else if (!container.contains(document.activeElement)) {
+            e.preventDefault();
+            first.focus();
+          }
+        };
+        container.addEventListener("keydown", onKeydown);
+        return () => {
+          container.removeEventListener("keydown", onKeydown);
+          if (prevFocus instanceof HTMLElement && prevFocus.isConnected)
+            prevFocus.focus();
+        };
+      };
+
       // ---- Global search modal ----
       const modal = document.getElementById("searchModal");
       const trigger = document.getElementById("searchTrigger");
       let searchReady = false;
+      let releaseSearchTrap = null;
       const focusInput = () =>
         modal?.querySelector("input")?.focus();
 
       const openSearch = () => {
         if (!modal) return;
+        if (modal.hidden) releaseSearchTrap = trapFocus(modal);
         modal.hidden = false;
         document.body.classList.add("search-open");
         if (!searchReady) {
@@ -128,14 +167,19 @@ const bundle = url("pagefind/");
                 el.innerHTML =
                   '<p class="search-fallback">Search index is generated at build time (run <code>npm run build</code>).</p>';
             });
+          // Move focus inside immediately so the trap has an anchor while
+          // Pagefind loads; it hops to the input once that renders.
+          modal.querySelector(".search-modal__close")?.focus();
         } else {
           setTimeout(focusInput, 30);
         }
       };
       const closeSearch = () => {
-        if (!modal) return;
+        if (!modal || modal.hidden) return;
         modal.hidden = true;
         document.body.classList.remove("search-open");
+        releaseSearchTrap?.();
+        releaseSearchTrap = null;
       };
 
       trigger?.addEventListener("click", openSearch);
@@ -147,6 +191,8 @@ const bundle = url("pagefind/");
       const lb = document.getElementById("lightbox");
       const lbImg = lb?.querySelector(".lightbox__img");
       const lbCap = lb?.querySelector(".lightbox__cap");
+      const lbClose = lb?.querySelector(".lightbox__close");
+      let releaseLightboxTrap = null;
       const openLightbox = (img) => {
         if (!lb || !lbImg) return;
         lbImg.src = img.currentSrc || img.src;
@@ -160,16 +206,33 @@ const bundle = url("pagefind/");
         }
         lb.hidden = false;
         document.body.classList.add("lightbox-open");
+        releaseLightboxTrap = trapFocus(lb);
+        lbClose?.focus();
       };
       const closeLightbox = () => {
-        if (!lb) return;
+        if (!lb || lb.hidden) return;
         lb.hidden = true;
         document.body.classList.remove("lightbox-open");
+        releaseLightboxTrap?.();
+        releaseLightboxTrap = null;
       };
       // Only real figures are zoomable (equations are excluded by class).
+      // Each image becomes a focusable, Enter/Space-operable button.
       document.querySelectorAll("figure.figure img").forEach((img) => {
         img.classList.add("zoomable");
+        img.setAttribute("role", "button");
+        img.setAttribute("tabindex", "0");
+        const label = img.alt
+          ? `View larger: ${img.alt}`
+          : "View larger image";
+        img.setAttribute("aria-label", label);
         img.addEventListener("click", () => openLightbox(img));
+        img.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            openLightbox(img);
+          }
+        });
       });
       lb?.addEventListener("click", (e) => {
         if (e.target === lb || e.target.classList.contains("lightbox__close"))
