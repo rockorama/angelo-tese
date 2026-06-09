@@ -176,6 +176,36 @@ img { max-width: 100%; height: auto; }
   color: var(--blue);
   margin-right: 0.5rem;
 }
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.page-head h1 { flex: 1 1 auto; }
+.src-link {
+  font-family: var(--sans);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--grey-500);
+  white-space: nowrap;
+  border: 1px solid var(--grey-200);
+  border-radius: 6px;
+  padding: 0.2rem 0.5rem;
+  margin-bottom: 0.7rem;
+}
+.src-link:hover { color: var(--blue-dark); border-color: var(--blue); text-decoration: none; }
+.src-link.inline {
+  border: none;
+  padding: 0 0.3rem;
+  margin: 0 0 0 0.5rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--grey-300);
+  vertical-align: middle;
+}
+.src-link.inline:hover { color: var(--blue); }
 .content h2 {
   font-size: 1.4rem;
   margin: 2.4rem 0 0.8rem;

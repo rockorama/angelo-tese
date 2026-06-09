@@ -181,7 +181,26 @@ def build_sections(doc):
 # --------------------------------------------------------------------------
 # Per-page block classification
 # --------------------------------------------------------------------------
-CAPTION_RE = re.compile(r"^\s*(Figure|Table)\s+[\dIVX]+([.\-]\d+)?", re.I)
+CAP_PREFIX = re.compile(
+    r"^\s*(Figure|Table)\s+[\dIVXLC]+(?:[.\-]\d+)?\s*(.*)$", re.I
+)
+
+
+def caption_start(txt):
+    """True if a line *opens* a figure/table caption.
+
+    Distinguishes a real caption ("Figure 2-3 – ...", "Table 7-3 Distribution...")
+    from a sentence that merely mentions a figure ("Figure 8-11 is the histogram",
+    "Table 8-8 shows..."): a caption is followed by a dash or a capitalised word,
+    a sentence by a lower-case verb. Works regardless of horizontal alignment.
+    """
+    m = CAP_PREFIX.match(txt)
+    if not m:
+        return False
+    rest = m.group(2).lstrip()
+    if not rest:
+        return True
+    return rest[0] in "–—-:" or rest[0].isupper()
 
 
 def line_text(line):
@@ -200,16 +219,15 @@ def classify_line(raw, bbox, page_number_str, toc_titles):
         return "pagenum", txt
     if norm_title(raw) in toc_titles:
         return "heading", txt
-    # Lines starting at the left margin are body prose (a sentence that merely
-    # opens with "Figure 3 shows..." is prose, not a caption).
+    # A figure/table caption (detected by shape, not alignment, so captions sitting
+    # at the body margin or in side-by-side columns are still caught).
+    if caption_start(txt):
+        return "caption", txt
+    # Lines starting at the left margin are body prose.
     if x0 <= PROSE_X_MAX:
         return "prose", txt
-    # Centered / indented line:
-    #   - a real figure/table caption begins with "Figure|Table N";
-    #   - a definition-list sentence has several words;
-    #   - otherwise it is a display equation.
-    if CAPTION_RE.match(txt):
-        return "caption", txt
+    # Centered / indented line: a definition-list sentence has several words;
+    # otherwise it is a display equation.
     words = re.findall(r"[A-Za-z]{2,}", txt)
     if len(words) >= 4:
         return "prose", txt
@@ -275,13 +293,17 @@ def extract():
     except Exception as exc:  # pragma: no cover
         print("cover extraction failed:", exc)
 
+    # Pre-index sections by normalised title for fast heading lookup.
+    title_to_sections = {}
+    for s in sections:
+        title_to_sections.setdefault(norm_title(s["raw_title"]), []).append(s)
+
     first_content_page = sections[0]["start_page"]
     for pno in range(first_content_page, doc.page_count):
         page = doc[pno]
-        # advance section pointer when entering a section's start page
-        while cur + 1 < len(sections) and sections[cur + 1]["start_page"] <= pno:
-            cur += 1
-
+        # Section boundaries are driven by the *headings themselves* (below), not
+        # by page numbers: text above a mid-page heading must stay in the previous
+        # section. A page-based fallback only kicks in if a heading is never seen.
         page_num_str = str(pno)
         raw = page.get_text("dict")
 
@@ -309,19 +331,19 @@ def extract():
 
         # walk elements, build content blocks for current section(s)
         para_lines = []
-        para_indent = False
         graphic_rects = []
+        cap_entries = []   # open caption being assembled: [{text, x0}]
+        cap_target = None  # figure block the caption attaches to (None => standalone)
+        cap_last_y = 0.0
 
         def flush_para():
-            nonlocal para_lines, para_indent
+            nonlocal para_lines
             if para_lines:
-                text = " ".join(para_lines).strip()
-                text = re.sub(r"\s+", " ", text)
+                text = re.sub(r"\s+", " ", " ".join(para_lines)).strip()
                 # drop a stray heading line that repeats the section title
                 if text and text.lower() != sections[cur]["title"].lower():
                     blocks_by_section[cur].append({"type": "p", "text": text})
             para_lines = []
-            para_indent = False
 
         def flush_graphic():
             nonlocal graphic_rects, fig_counter
@@ -336,51 +358,80 @@ def extract():
             name = f"p{pno:03d}-g{fig_counter:03d}.png"
             dim = crop_image(page, rect, IMG_DIR / name)
             blocks_by_section[cur].append(
-                {
-                    "type": "figure",
-                    "src": name,
-                    "w": dim["w"],
-                    "h": dim["h"],
-                    "page": pno,
-                }
+                {"type": "figure", "src": name, "w": dim["w"], "h": dim["h"], "page": pno}
             )
             graphic_rects = []
 
+        def finalize_caption():
+            nonlocal cap_entries, cap_target
+            if not cap_entries:
+                return
+            text = " / ".join(e["text"] for e in cap_entries)
+            if cap_target is not None:
+                cap_target["caption"] = text
+            else:
+                blocks_by_section[cur].append({"type": "caption", "text": text})
+            cap_entries = []
+            cap_target = None
+
         for y0, kind, payload in elements:
+            box = payload["bbox"] if isinstance(payload, dict) else None
+
+            # A line right under an open caption, in the same column and tightly
+            # spaced, is a continuation (wrapped caption text, or the matching line
+            # of a side-by-side pair). The next body paragraph sits further down.
+            if cap_entries and kind in ("prose", "math"):
+                nwords = len(re.findall(r"[A-Za-z]{2,}", payload["text"]))
+                col = min(cap_entries, key=lambda e: abs(e["x0"] - box[0]))
+                same_col = abs(col["x0"] - box[0]) < 60
+                complete = col["text"].rstrip().endswith((".", "!", "?"))
+                if (box[1] - cap_last_y) < 20 and nwords <= 14 and same_col and not complete:
+                    col["text"] += " " + payload["text"]
+                    cap_last_y = box[3]
+                    continue
+
             if kind == "graphic" or kind == "math":
+                finalize_caption()
                 flush_para()
-                rect = payload if kind == "graphic" else fitz.Rect(payload["bbox"])
+                rect = payload if kind == "graphic" else fitz.Rect(box)
                 graphic_rects.append(rect)
                 continue
+
             # text flow element ends any graphic run
             flush_graphic()
-            if kind == "heading":
-                flush_para()
-                # heading marks a (sub)section boundary; switch pointer if matches
-                nt = norm_title(payload["raw"])
-                for s in sections:
-                    if norm_title(s["raw_title"]) == nt and s["start_page"] in (pno, pno - 1, pno + 1):
-                        cur = s["idx"]
-                        break
-                continue
+
             if kind == "caption":
                 flush_para()
-                # attach caption to the most recent figure in this section
-                sec_blocks = blocks_by_section[cur]
-                if sec_blocks and sec_blocks[-1]["type"] == "figure":
-                    sec_blocks[-1]["caption"] = payload["text"]
-                else:
-                    blocks_by_section[cur].append(
-                        {"type": "caption", "text": payload["text"]}
+                if not cap_entries:
+                    sec_blocks = blocks_by_section[cur]
+                    cap_target = (
+                        sec_blocks[-1]
+                        if sec_blocks and sec_blocks[-1]["type"] == "figure"
+                        else None
                     )
+                cap_entries.append({"text": payload["text"], "x0": box[0]})
+                cap_last_y = box[3]
                 continue
+
+            finalize_caption()
+
+            if kind == "heading":
+                flush_para()
+                # heading marks a (sub)section boundary: switch to the same-titled
+                # section whose TOC start page is closest to here.
+                cands = title_to_sections.get(norm_title(payload["raw"]), [])
+                if cands:
+                    best = min(cands, key=lambda s: abs(s["start_page"] - pno))
+                    if abs(best["start_page"] - pno) <= 3:
+                        cur = best["idx"]
+                continue
+
             if kind == "prose":
-                x0 = payload["bbox"][0]
-                is_indent = abs(x0 - INDENT_MARGIN) < 12
-                if is_indent and para_lines:
-                    flush_para()
+                if abs(box[0] - INDENT_MARGIN) < 12 and para_lines:
+                    flush_para()  # first-line indent starts a new paragraph
                 para_lines.append(payload["text"])
 
+        finalize_caption()
         flush_graphic()
         flush_para()
 

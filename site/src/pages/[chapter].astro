@@ -1,7 +1,7 @@
 ---
 import Base from "../layouts/Base.astro";
 import Block from "../components/Block.astro";
-import { getChapterNav, url } from "../lib/content.js";
+import { getChapterNav, meta, url } from "../lib/content.js";
 
 export function getStaticPaths() {
   const nav = getChapterNav();
@@ -10,14 +10,22 @@ export function getStaticPaths() {
 
 const { c } = Astro.props;
 const headingTag = (lvl) => (lvl >= 3 ? "h3" : "h2");
+
+// Link to the matching page of the original PDF (1-based #page fragment).
+const pdfPage = (startPage) => `${url(meta.pdf)}#page=${startPage + 1}`;
 ---
 
 <Base title={c.title} active={c.slug}>
   <article class="content" data-pagefind-body>
-    <h1>
-      {c.number && <span class="chnum">{c.number}.</span>}
-      {c.title}
-    </h1>
+    <div class="page-head">
+      <h1>
+        {c.number && <span class="chnum">{c.number}.</span>}
+        {c.title}
+      </h1>
+      <a class="src-link" href={pdfPage(c.head.start_page)} target="_blank" rel="noopener">
+        ↗ Original PDF, p.{c.head.start_page + 1}
+      </a>
+    </div>
 
     {c.head.blocks.map((b) => <Block block={b} />)}
 
@@ -28,7 +36,17 @@ const headingTag = (lvl) => (lvl >= 3 ? "h3" : "h2");
           const Tag = headingTag(s.level);
           return (
             <section>
-              <Tag id={s.slug}>{s.title}</Tag>
+              <Tag id={s.slug}>
+                {s.title}
+                <a
+                  class="src-link inline"
+                  href={pdfPage(s.start_page)}
+                  target="_blank"
+                  rel="noopener"
+                  title={`View this section in the original PDF (page ${s.start_page + 1})`}
+                  aria-label={`View "${s.title}" in the original PDF, page ${s.start_page + 1}`}
+                >↗ p.{s.start_page + 1}</a>
+              </Tag>
               {s.blocks.map((b) => (
                 <Block block={b} />
               ))}
