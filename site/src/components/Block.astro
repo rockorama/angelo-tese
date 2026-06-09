@@ -3,7 +3,7 @@ import { figure } from "../lib/content.js";
 const { block } = Astro.props;
 ---
 
-{block.type === "p" && <p set:html={block.html ?? block.text} />}
+{block.type === "p" && <p>{block.text}</p>}
 
 {
   block.type === "caption" && (
