@@ -194,6 +194,10 @@ def caption_start(txt):
     "Table 8-8 shows..."): a caption is followed by a dash or a capitalised word,
     a sentence by a lower-case verb. Works regardless of horizontal alignment.
     """
+    # Dot leaders ("Figure 1-1 – ... .......... 5") mark a Table-of-Figures entry,
+    # not a real caption.
+    if re.search(r"\.{4,}", txt):
+        return False
     m = CAP_PREFIX.match(txt)
     if not m:
         return False
@@ -402,13 +406,16 @@ def extract():
 
             if kind == "caption":
                 flush_para()
+                sec_blocks = blocks_by_section[cur]
+                has_fig = bool(sec_blocks) and sec_blocks[-1]["type"] == "figure"
+                # A "Figure N ..." line with no figure to attach to is not a real
+                # caption (e.g. the Table of Figures listing). Emit it as its own
+                # short paragraph instead of accumulating a giant caption block.
+                if not cap_entries and not has_fig:
+                    blocks_by_section[cur].append({"type": "p", "text": payload["text"]})
+                    continue
                 if not cap_entries:
-                    sec_blocks = blocks_by_section[cur]
-                    cap_target = (
-                        sec_blocks[-1]
-                        if sec_blocks and sec_blocks[-1]["type"] == "figure"
-                        else None
-                    )
+                    cap_target = sec_blocks[-1]
                 cap_entries.append({"text": payload["text"], "x0": box[0]})
                 cap_last_y = box[3]
                 continue
@@ -427,6 +434,14 @@ def extract():
                 continue
 
             if kind == "prose":
+                # A Table-of-Figures / Contents entry (dot leaders + page no.):
+                # render one per line and drop the trailing leaders.
+                if re.search(r"\.{4,}", payload["text"]):
+                    flush_para()
+                    entry = re.sub(r"\s*\.{2,}\s*\d*\s*$", "", payload["text"]).strip()
+                    if entry:
+                        blocks_by_section[cur].append({"type": "p", "text": entry})
+                    continue
                 if abs(box[0] - INDENT_MARGIN) < 12 and para_lines:
                     flush_para()  # first-line indent starts a new paragraph
                 para_lines.append(payload["text"])
